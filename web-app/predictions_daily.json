@@ -1,0 +1,53 @@
+{
+  "generated_at": "2025-12-18T00:56:26.128188",
+  "predictions": [
+    {
+      "date": "2025-12-17",
+      "day_name": "Wednesday",
+      "predicted_sales": 507812.5,
+      "confidence": "high"
+    },
+    {
+      "date": "2025-12-18",
+      "day_name": "Thursday",
+      "predicted_sales": 507812.5,
+      "confidence": "high"
+    },
+    {
+      "date": "2025-12-19",
+      "day_name": "Friday",
+      "predicted_sales": 507812.5,
+      "confidence": "high"
+    },
+    {
+      "date": "2025-12-20",
+      "day_name": "Saturday",
+      "predicted_sales": 507812.5,
+      "confidence": "medium"
+    },
+    {
+      "date": "2025-12-21",
+      "day_name": "Sunday",
+      "predicted_sales": 507812.5,
+      "confidence": "medium"
+    },
+    {
+      "date": "2025-12-22",
+      "day_name": "Monday",
+      "predicted_sales": 507812.5,
+      "confidence": "high"
+    },
+    {
+      "date": "2025-12-23",
+      "day_name": "Tuesday",
+      "predicted_sales": 507812.5,
+      "confidence": "high"
+    }
+  ],
+  "recommendations": [],
+  "summary": {
+    "total_predicted_sales": 3554687.5,
+    "avg_daily_sales": 507812.5,
+    "high_demand_days": 0
+  }
+}

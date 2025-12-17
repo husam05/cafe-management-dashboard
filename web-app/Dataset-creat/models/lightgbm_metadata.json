@@ -1,0 +1,31 @@
+{
+  "model_type": "LightGBM",
+  "target": "total_sales",
+  "features": [
+    "day_of_week",
+    "is_weekend",
+    "day_of_month",
+    "month",
+    "sales_lag_1",
+    "orders_lag_1",
+    "items_lag_1",
+    "sales_lag_2",
+    "orders_lag_2",
+    "items_lag_2",
+    "sales_lag_3",
+    "orders_lag_3",
+    "items_lag_3",
+    "sales_rolling_3",
+    "orders_rolling_3",
+    "items_rolling_3",
+    "sales_rolling_7",
+    "orders_rolling_7",
+    "items_rolling_7",
+    "sales_trend"
+  ],
+  "metrics": {
+    "mae": 730699.5833333333,
+    "mape": 5.20157312711991e+22
+  },
+  "trained_at": "2025-12-18T00:48:48.562168"
+}

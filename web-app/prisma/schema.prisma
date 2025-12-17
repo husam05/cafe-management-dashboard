@@ -1,0 +1,426 @@
+
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// --------------------------------------------------------
+// Categories
+// --------------------------------------------------------
+model Category {
+  id          Int      @id @map("idCategory")
+  name        String   @map("categoryName")
+  description String?  @db.Text
+  displayOrder Int?    @default(0)
+  imageUrl    String?
+  isActive    Boolean? @default(true)
+  isKitchen   Boolean? @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  menuItems   MenuItem[]
+
+  @@map("Categories")
+}
+
+// --------------------------------------------------------
+// Menu Items
+// --------------------------------------------------------
+model MenuItem {
+  id              Int      @id @map("idMenuItem")
+  categoryId      Int
+  name            String   @map("itemName")
+  description     String?  @db.Text
+  basePrice       Decimal  @db.Decimal(10, 2)
+  imageUrl        String?
+  preparationTime Int?     @default(0)
+  itemType        String?  @default("recipe")
+  isInventoryItem Boolean? @default(false)
+  isAvailable     Boolean? @default(true)
+  isActive        Boolean? @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category   Category    @relation(fields: [categoryId], references: [id])
+  sizes      ItemSize[]
+  orderItems OrderItem[]
+  recipes    Recipe[]
+
+  @@map("MenuItems")
+}
+
+// --------------------------------------------------------
+// Item Sizes
+// --------------------------------------------------------
+model ItemSize {
+  id              Int      @id @map("idItemSize")
+  menuItemId      Int
+  name            String   @map("sizeName")
+  priceAdjustment Decimal? @default(0.00) @db.Decimal(10, 2)
+  isDefault       Boolean? @default(false)
+  isActive        Boolean? @default(true)
+  createdAt       DateTime @default(now())
+
+  menuItem   MenuItem    @relation(fields: [menuItemId], references: [id])
+  orderItems OrderItem[]
+  recipes    Recipe[]
+
+  @@map("ItemSizes")
+}
+
+// --------------------------------------------------------
+// Ingredients (Inventory)
+// --------------------------------------------------------
+model Ingredient {
+  id           Int      @id @map("idIngredient")
+  name         String   @map("ingredientName")
+  unit         String
+  currentStock Decimal? @default(0.000) @db.Decimal(10, 3)
+  minStock     Decimal? @default(0.000) @db.Decimal(10, 3)
+  maxStock     Decimal? @default(0.000) @db.Decimal(10, 3)
+  costPerUnit  Decimal? @default(0.00) @db.Decimal(10, 2)
+  notes        String?  @db.Text
+  isActive     Boolean? @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  transactions  InventoryTransaction[]
+  purchaseItems PurchaseItem[]
+  recipes       Recipe[]
+
+  @@map("Ingredients")
+}
+
+// --------------------------------------------------------
+// Inventory Transactions
+// --------------------------------------------------------
+model InventoryTransaction {
+  id              Int      @id @map("idTransaction")
+  ingredientId    Int
+  transactionType String   // enum
+  quantity        Decimal  @db.Decimal(10, 3)
+  costPerUnit     Decimal? @db.Decimal(10, 2)
+  totalCost       Decimal? @db.Decimal(10, 2)
+  orderId         Int?
+  recordedBy      Int?
+  notes           String?  @db.Text
+  transactionDate DateTime @default(now())
+
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+  order        Order?     @relation(fields: [orderId], references: [id])
+  staff        Staff?     @relation(fields: [recordedBy], references: [id])
+
+  @@map("InventoryTransactions")
+}
+
+// --------------------------------------------------------
+// Staff
+// --------------------------------------------------------
+model Staff {
+  id          Int       @id @map("idStaff")
+  fullName    String
+  email       String?   @unique
+  phone       String
+  password    String
+  role        String?   @default("cashier")
+  hireDate    DateTime  @db.Date
+  salary      Decimal?  @db.Decimal(10, 2)
+  isActive    Boolean?  @default(true)
+  lastLogin   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  openedReceipts    DailyReceipt[] @relation("OpenedReceipts")
+  closedReceipts    DailyReceipt[] @relation("ClosedReceipts")
+  recordedExpenses  Expense[]
+  transactions      InventoryTransaction[]
+  preparedItems     OrderItem[]
+  orders            Order[]
+  payments          Payment[]
+  createdPurchases  Purchase[]      @relation("CreatedPurchases")
+  receivedPurchases Purchase[]      @relation("ReceivedPurchases")
+  supplierCredits   SupplierCredit[]
+  supplierPayments  SupplierPayment[]
+  tips              Tip[]
+
+  @@map("Staff")
+}
+
+// --------------------------------------------------------
+// Daily Receipts (Financials)
+// --------------------------------------------------------
+model DailyReceipt {
+  id            Int       @id @map("idDailyReceipt")
+  date          DateTime  @map("receiptDate") @db.Date
+  shiftNumber   Int?      @default(1)
+  openingCash   Decimal?  @default(0.00) @db.Decimal(10, 2)
+  totalSales    Decimal?  @default(0.00) @db.Decimal(10, 2)
+  totalExpenses Decimal?  @default(0.00) @db.Decimal(10, 2)
+  closingCash   Decimal?  @default(0.00) @db.Decimal(10, 2)
+  expectedCash  Decimal?  @default(0.00) @db.Decimal(10, 2)
+  discrepancy   Decimal?  @default(0.00) @db.Decimal(10, 2)
+  openedBy      Int?
+  closedBy      Int?
+  openedAt      DateTime?
+  closedAt      DateTime?
+  isClosed      Boolean?  @default(false)
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now())
+
+  opener   Staff?   @relation("OpenedReceipts", fields: [openedBy], references: [id])
+  closer   Staff?   @relation("ClosedReceipts", fields: [closedBy], references: [id])
+  expenses Expense[]
+
+  @@map("DailyReceipts")
+}
+
+// --------------------------------------------------------
+// Expenses
+// --------------------------------------------------------
+model Expense {
+  id             Int      @id @map("idExpense")
+  date           DateTime @map("expenseDate") @db.Date
+  category       String
+  amount         Decimal  @db.Decimal(10, 2)
+  description    String?  @db.Text
+  receiptNumber  String?
+  recordedBy     Int
+  dailyReceiptId Int?
+  createdAt      DateTime @default(now())
+
+  staff        Staff         @relation(fields: [recordedBy], references: [id])
+  dailyReceipt DailyReceipt? @relation(fields: [dailyReceiptId], references: [id])
+
+  @@map("Expenses")
+}
+
+// --------------------------------------------------------
+// Orders
+// --------------------------------------------------------
+model Order {
+  id                  Int      @id @map("idOrder")
+  orderNumber         String   @unique
+  orderType           String?  @default("cashier")
+  tableNumber         String?
+  status              String?  @default("pending")
+  totalAmount         Decimal  @db.Decimal(10, 2)
+  cashierId           Int?
+  discount            Decimal  @default(0.00) @db.Decimal(10, 2)
+  orderDate           DateTime @default(now())
+  preparedAt          DateTime?
+  completedAt         DateTime?
+  cancelledAt         DateTime?
+  notes               String?  @db.Text
+
+  cashier       Staff?      @relation(fields: [cashierId], references: [id])
+  orderItems    OrderItem[]
+  payments      Payment[]
+  transactions  InventoryTransaction[]
+  tips          Tip[]
+
+  @@map("Orders")
+}
+
+// --------------------------------------------------------
+// Order Items
+// --------------------------------------------------------
+model OrderItem {
+  id                  Int       @id @map("idOrderItem")
+  orderId             Int
+  menuItemId          Int
+  itemSizeId          Int?
+  quantity            Int       @default(1)
+  price               Decimal   @db.Decimal(10, 2)
+  specialInstructions String?   @db.Text
+  status              String?   @default("pending")
+  preparedBy          Int?
+  preparedAt          DateTime?
+  completedAt         DateTime?
+  cancelledAt         DateTime?
+  createdAt           DateTime  @default(now())
+
+  order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem  @relation(fields: [menuItemId], references: [id])
+  itemSize ItemSize? @relation(fields: [itemSizeId], references: [id])
+  preparer Staff?    @relation(fields: [preparedBy], references: [id])
+
+  @@map("OrderItems")
+}
+
+// --------------------------------------------------------
+// Payments
+// --------------------------------------------------------
+model Payment {
+  id             Int      @id @map("idPayment")
+  orderId        Int
+  cashierId      Int
+  paymentMethod  String?  @default("cash")
+  amountReceived Decimal  @db.Decimal(10, 2)
+  changeDue      Decimal? @default(0.00) @db.Decimal(10, 2)
+  paymentDate    DateTime @default(now())
+  receiptNumber  String?  @unique
+  notes          String?  @db.Text
+
+  order   Order @relation(fields: [orderId], references: [id])
+  cashier Staff @relation(fields: [cashierId], references: [id])
+
+  @@map("Payments")
+}
+
+// --------------------------------------------------------
+// Suppliers
+// --------------------------------------------------------
+model Supplier {
+  id              Int      @id @map("idSupplier")
+  name            String   @map("supplierName")
+  phone           String?  @map("supplierPhone")
+  address         String?  @map("supplierAddress") @db.Text
+  initialDebt     Decimal? @default(0.00) @db.Decimal(10, 2)
+  notes           String?  @db.Text
+  isActive        Boolean? @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  purchases       Purchase[]
+  credits         SupplierCredit[]
+  payments        SupplierPayment[]
+
+  @@map("Suppliers")
+}
+
+// --------------------------------------------------------
+// Purchases
+// --------------------------------------------------------
+model Purchase {
+  id                   Int       @id @map("idPurchase")
+  purchaseNumber       String    @unique
+  supplierName         String
+  supplierPhone        String?
+  supplierId           Int?
+  totalAmount          Decimal?  @default(0.00) @db.Decimal(10, 2)
+  purchaseDate         DateTime  @db.Date
+  expectedDeliveryDate DateTime? @db.Date
+  status               String?   @default("pending")
+  createdBy            Int?
+  receivedBy           Int?
+  receivedAt           DateTime?
+  notes                String?   @db.Text
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  supplier         Supplier?         @relation(fields: [supplierId], references: [id])
+  creator          Staff?            @relation("CreatedPurchases", fields: [createdBy], references: [id])
+  receiver         Staff?            @relation("ReceivedPurchases", fields: [receivedBy], references: [id])
+  items            PurchaseItem[]
+  supplierCredits  SupplierCredit[]
+
+  @@map("Purchases")
+}
+
+// --------------------------------------------------------
+// Purchase Items
+// --------------------------------------------------------
+model PurchaseItem {
+  id               Int      @id @map("idPurchaseItem")
+  purchaseId       Int
+  ingredientId     Int
+  orderedQuantity  Decimal  @db.Decimal(10, 3)
+  receivedQuantity Decimal? @default(0.000) @db.Decimal(10, 3)
+  unitPrice        Decimal  @db.Decimal(10, 2)
+  totalPrice       Decimal? @db.Decimal(10, 2)
+  notes            String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  purchase   Purchase   @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@map("PurchaseItems")
+}
+
+// --------------------------------------------------------
+// Recipes
+// --------------------------------------------------------
+model Recipe {
+  id             Int      @id @map("idRecipe")
+  menuItemId     Int
+  sizeId         Int?
+  ingredientId   Int
+  quantityNeeded Decimal  @db.Decimal(10, 3)
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  menuItem   MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+  size       ItemSize?  @relation(fields: [sizeId], references: [id], onDelete: Cascade)
+
+  @@map("Recipes")
+}
+
+// --------------------------------------------------------
+// Supplier Credits
+// --------------------------------------------------------
+model SupplierCredit {
+  id          Int      @id @map("idCredit")
+  supplierId  Int
+  amount      Decimal  @db.Decimal(10, 2)
+  creditDate  DateTime @db.Date
+  creditType  String?  @default("credit")
+  description String?  @db.Text
+  purchaseId  Int?
+  recordedBy  Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  supplier  Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  purchase  Purchase? @relation(fields: [purchaseId], references: [id])
+  recorder  Staff    @relation(fields: [recordedBy], references: [id])
+
+  @@map("SupplierCredits")
+}
+
+// --------------------------------------------------------
+// Supplier Payments
+// --------------------------------------------------------
+model SupplierPayment {
+  id            Int      @id @map("idPayment")
+  supplierId    Int
+  amount        Decimal  @db.Decimal(10, 2)
+  paymentDate   DateTime @db.Date
+  paymentMethod String?  @default("cash")
+  notes         String?  @db.Text
+  recordedBy    Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  supplier  Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  recorder  Staff    @relation(fields: [recordedBy], references: [id])
+
+  @@map("SupplierPayments")
+}
+
+// --------------------------------------------------------
+// Tips
+// --------------------------------------------------------
+model Tip {
+  id         Int      @id @map("idTip")
+  tipDate    DateTime @db.Date
+  amount     Decimal  @db.Decimal(10, 2)
+  orderId    Int?
+  recordedBy Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  order    Order? @relation(fields: [orderId], references: [id])
+  recorder Staff  @relation(fields: [recordedBy], references: [id])
+
+  @@map("Tips")
+}
