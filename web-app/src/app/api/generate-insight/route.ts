@@ -4,6 +4,15 @@ import path from 'path';
 import os from 'os';
 import { promises as fs } from 'fs';
 import { loadData } from '@/lib/db';
+import { 
+    generateFullReport, 
+    generateForecastReport, 
+    generateAnomaliesReport, 
+    generateRecommendationsReport 
+} from '@/lib/ai-insights';
+
+// Check if running on Vercel (serverless)
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV !== undefined;
 
 // Rate limiting - simple in-memory store (use Redis in production)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
@@ -95,45 +104,95 @@ export async function POST(req: Request) {
         // Validate and sanitize input
         const prompt = validatePrompt(body.prompt);
 
-        // Use environment variable for Python path with fallback
-        const pythonPath = process.env.PYTHON_PATH || '/home/ai/miniconda3/envs/webai/bin/python';
-        const scriptPath = path.join(process.cwd(), 'scripts/predict_custom.py');
-
-        // Verify script exists
-        try {
-            await fs.access(scriptPath);
-        } catch {
-            throw new Error('Prediction script not found');
-        }
-
         // Fetch Live Data
         const dbData = await loadData();
 
-        // Use secure temp directory with unique filename
-        const tempDir = os.tmpdir();
-        const tempFileName = `cafe_data_${Date.now()}_${Math.random().toString(36).substring(2, 10)}.json`;
-        const tempFilePath = path.join(tempDir, tempFileName);
-
-        // Write data with restricted permissions
-        await fs.writeFile(tempFilePath, JSON.stringify(dbData), { mode: 0o600 });
-
-        try {
-            // Execute Python securely using spawn (no shell injection possible)
-            const { stdout, stderr } = await executePython(pythonPath, scriptPath, [prompt, tempFilePath]);
-
-            if (stderr && stderr.trim().length > 0) {
-                console.warn("Python Stderr:", stderr);
+        // On Vercel or if Python not available, use JavaScript AI engine
+        if (isVercel) {
+            console.log('Using JavaScript AI engine (Vercel environment)');
+            let result: string;
+            
+            switch (prompt) {
+                case 'full_report':
+                    result = generateFullReport(dbData);
+                    break;
+                case 'forecast_only':
+                    result = generateForecastReport(dbData);
+                    break;
+                case 'detect_anomalies':
+                    result = generateAnomaliesReport(dbData);
+                    break;
+                case 'recommendations':
+                    result = generateRecommendationsReport(dbData);
+                    break;
+                default:
+                    result = generateFullReport(dbData);
             }
+            
+            return NextResponse.json({ text: result });
+        }
 
-            return NextResponse.json({ text: stdout.trim() });
-        } finally {
-            // Always cleanup temp file
-            await fs.unlink(tempFilePath).catch(() => { });
+        // Local development: Try Python first, fallback to JS
+        const pythonPath = process.env.PYTHON_PATH || '/home/ai/miniconda3/envs/webai/bin/python';
+        const scriptPath = path.join(process.cwd(), 'scripts/predict_custom.py');
+
+        // Check if Python script exists
+        let usePython = false;
+        try {
+            await fs.access(scriptPath);
+            await fs.access(pythonPath);
+            usePython = true;
+        } catch {
+            console.log('Python not available, using JavaScript AI engine');
+        }
+
+        if (usePython) {
+            // Use secure temp directory with unique filename
+            const tempDir = os.tmpdir();
+            const tempFileName = `cafe_data_${Date.now()}_${Math.random().toString(36).substring(2, 10)}.json`;
+            const tempFilePath = path.join(tempDir, tempFileName);
+
+            // Write data with restricted permissions
+            await fs.writeFile(tempFilePath, JSON.stringify(dbData), { mode: 0o600 });
+
+            try {
+                // Execute Python securely using spawn (no shell injection possible)
+                const { stdout, stderr } = await executePython(pythonPath, scriptPath, [prompt, tempFilePath]);
+
+                if (stderr && stderr.trim().length > 0) {
+                    console.warn("Python Stderr:", stderr);
+                }
+
+                return NextResponse.json({ text: stdout.trim() });
+            } finally {
+                // Always cleanup temp file
+                await fs.unlink(tempFilePath).catch(() => { });
+            }
+        } else {
+            // Fallback to JavaScript AI engine
+            let result: string;
+            
+            switch (prompt) {
+                case 'full_report':
+                    result = generateFullReport(dbData);
+                    break;
+                case 'forecast_only':
+                    result = generateForecastReport(dbData);
+                    break;
+                case 'detect_anomalies':
+                    result = generateAnomaliesReport(dbData);
+                    break;
+                case 'recommendations':
+                    result = generateRecommendationsReport(dbData);
+                    break;
+                default:
+                    result = generateFullReport(dbData);
+            }
+            
+            return NextResponse.json({ text: result });
         }
     } catch (error) {
         console.error('Error generating insight:', error);
-        
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         
         // Don't expose internal error details to client
         return NextResponse.json(

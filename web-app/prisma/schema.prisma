@@ -9,6 +9,8 @@ generator client {
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
+  // Disable relation mode for JSON-only deployments
+  relationMode = "prisma"
 }
 
 // --------------------------------------------------------
