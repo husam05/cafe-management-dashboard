@@ -3,9 +3,9 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { GlassCard, GlassCardContent, GlassCardHeader, GlassCardTitle } from "@/components/ui/glass-card"
-import { Sparkles, Loader2, TrendingUp, AlertTriangle, FileText, Zap, Brain, BarChart3, Activity } from "lucide-react"
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { Sparkles, Loader2, TrendingUp, AlertTriangle, FileText, Zap, Brain, BarChart3, Activity, Table as TableIcon } from "lucide-react"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 
 export default function AIInsightsPage() {
     const [result, setResult] = useState("")
@@ -190,11 +190,7 @@ export default function AIInsightsPage() {
                         </GlassCardHeader>
                         <GlassCardContent>
                             {result ? (
-                                <div className="prose prose-purple dark:prose-invert max-w-none text-right animate-in fade-in duration-500" dir="rtl">
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                        {result}
-                                    </ReactMarkdown>
-                                </div>
+                                <FormattedReport content={result} />
                             ) : (
                                 <div className="flex flex-col items-center justify-center h-[500px] text-muted-foreground">
                                     <div className="relative">
@@ -211,4 +207,253 @@ export default function AIInsightsPage() {
             </div>
         </div>
     )
+}
+
+// Formatted Report Component - parses markdown and renders with proper styling
+function FormattedReport({ content }: { content: string }) {
+    const sections = parseReportSections(content);
+    
+    return (
+        <div className="space-y-6 animate-in fade-in duration-500" dir="rtl">
+            {sections.map((section, idx) => (
+                <ReportSection key={idx} section={section} />
+            ))}
+        </div>
+    );
+}
+
+interface Section {
+    type: 'title' | 'subtitle' | 'table' | 'text' | 'quote' | 'list' | 'divider';
+    content: string;
+    level?: number;
+    rows?: string[][];
+    headers?: string[];
+}
+
+function parseReportSections(content: string): Section[] {
+    const lines = content.split('\n');
+    const sections: Section[] = [];
+    let i = 0;
+    
+    while (i < lines.length) {
+        const line = lines[i].trim();
+        
+        // Skip empty lines
+        if (!line) {
+            i++;
+            continue;
+        }
+        
+        // Divider
+        if (line === '---' || line === '***') {
+            sections.push({ type: 'divider', content: '' });
+            i++;
+            continue;
+        }
+        
+        // Title (# or ##)
+        if (line.startsWith('# ')) {
+            sections.push({ type: 'title', content: line.replace(/^#\s*/, ''), level: 1 });
+            i++;
+            continue;
+        }
+        
+        if (line.startsWith('## ')) {
+            sections.push({ type: 'subtitle', content: line.replace(/^##\s*/, ''), level: 2 });
+            i++;
+            continue;
+        }
+        
+        if (line.startsWith('### ')) {
+            sections.push({ type: 'subtitle', content: line.replace(/^###\s*/, ''), level: 3 });
+            i++;
+            continue;
+        }
+        
+        // Quote
+        if (line.startsWith('>')) {
+            sections.push({ type: 'quote', content: line.replace(/^>\s*/, '') });
+            i++;
+            continue;
+        }
+        
+        // Table detection
+        if (line.startsWith('|') && line.endsWith('|')) {
+            const tableLines: string[] = [line];
+            i++;
+            
+            // Collect all table lines
+            while (i < lines.length && lines[i].trim().startsWith('|')) {
+                tableLines.push(lines[i].trim());
+                i++;
+            }
+            
+            // Parse table
+            const headers = tableLines[0].split('|').filter(c => c.trim()).map(c => c.trim());
+            const rows: string[][] = [];
+            
+            for (let j = 2; j < tableLines.length; j++) { // Skip header and separator
+                const cells = tableLines[j].split('|').filter(c => c.trim()).map(c => c.trim());
+                if (cells.length > 0) {
+                    rows.push(cells);
+                }
+            }
+            
+            sections.push({ type: 'table', content: '', headers, rows });
+            continue;
+        }
+        
+        // List items
+        if (line.startsWith('- ') || line.startsWith('* ')) {
+            const listItems: string[] = [line.replace(/^[-*]\s*/, '')];
+            i++;
+            
+            while (i < lines.length && (lines[i].trim().startsWith('- ') || lines[i].trim().startsWith('* '))) {
+                listItems.push(lines[i].trim().replace(/^[-*]\s*/, ''));
+                i++;
+            }
+            
+            sections.push({ type: 'list', content: listItems.join('\n') });
+            continue;
+        }
+        
+        // Regular text
+        sections.push({ type: 'text', content: line });
+        i++;
+    }
+    
+    return sections;
+}
+
+function ReportSection({ section }: { section: Section }) {
+    switch (section.type) {
+        case 'title':
+            return (
+                <div className="relative pb-4 mb-4 border-b border-purple-500/20">
+                    <h1 className="text-2xl font-bold bg-gradient-to-l from-purple-600 to-blue-500 bg-clip-text text-transparent flex items-center gap-2 justify-end">
+                        {cleanEmoji(section.content)}
+                    </h1>
+                </div>
+            );
+            
+        case 'subtitle':
+            const SubHeadingIcon = section.level === 2 ? TableIcon : Activity;
+            return (
+                <div className="mt-6 mb-3">
+                    <h2 className={`flex items-center gap-2 justify-end ${section.level === 2 ? 'text-xl font-bold text-purple-400' : 'text-lg font-semibold text-blue-400'}`}>
+                        {cleanEmoji(section.content)}
+                        <SubHeadingIcon className="w-5 h-5" />
+                    </h2>
+                </div>
+            );
+            
+        case 'quote':
+            return (
+                <div className="bg-blue-500/10 border-r-4 border-blue-500 p-4 rounded-lg text-sm">
+                    <p className="text-blue-300">{cleanEmoji(section.content)}</p>
+                </div>
+            );
+            
+        case 'table':
+            return (
+                <div className="overflow-x-auto rounded-lg border border-white/10 bg-white/5">
+                    <Table dir="rtl">
+                        <TableHeader>
+                            <TableRow className="border-b-white/10 bg-white/5">
+                                {section.headers?.map((header, i) => (
+                                    <TableHead key={i} className="text-right font-bold text-purple-400 py-3">
+                                        {cleanEmoji(header)}
+                                    </TableHead>
+                                ))}
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {section.rows?.map((row, rowIdx) => (
+                                <TableRow key={rowIdx} className="border-b-white/5 hover:bg-white/5 transition-colors">
+                                    {row.map((cell, cellIdx) => (
+                                        <TableCell key={cellIdx} className="py-3">
+                                            <CellContent content={cell} isFirstColumn={cellIdx === 0} />
+                                        </TableCell>
+                                    ))}
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+            );
+            
+        case 'list':
+            return (
+                <div className="space-y-2 pr-4">
+                    {section.content.split('\n').map((item, i) => (
+                        <div key={i} className="flex items-start gap-2 text-right">
+                            <span className="text-purple-400 mt-1">•</span>
+                            <span className="flex-1">{cleanEmoji(item)}</span>
+                        </div>
+                    ))}
+                </div>
+            );
+            
+        case 'divider':
+            return <hr className="border-white/10 my-6" />;
+            
+        case 'text':
+            // Check for special formatting
+            if (section.content.startsWith('*') && section.content.endsWith('*')) {
+                return (
+                    <p className="text-xs text-muted-foreground italic text-center mt-4">
+                        {section.content.replace(/^\*|\*$/g, '')}
+                    </p>
+                );
+            }
+            return <p className="text-sm leading-relaxed">{cleanEmoji(section.content)}</p>;
+            
+        default:
+            return null;
+    }
+}
+
+function CellContent({ content, isFirstColumn }: { content: string; isFirstColumn: boolean }) {
+    const cleaned = cleanEmoji(content);
+    
+    // Check for priority badges
+    if (content.includes('عالية') || content.includes('🔴')) {
+        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">{cleaned}</Badge>;
+    }
+    if (content.includes('متوسطة') || content.includes('🟡')) {
+        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">{cleaned}</Badge>;
+    }
+    if (content.includes('🟢') || content.includes('جيد')) {
+        return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">{cleaned}</Badge>;
+    }
+    
+    // Currency values (IQD)
+    if (content.includes('IQD') || /^\d{1,3}(,\d{3})*\s*IQD?$/.test(content.trim())) {
+        return <span className="font-mono text-emerald-400 font-bold">{cleaned}</span>;
+    }
+    
+    // Percentage
+    if (content.includes('%')) {
+        const isPositive = content.includes('+') || !content.includes('-');
+        return <span className={`font-mono font-bold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>{cleaned}</span>;
+    }
+    
+    // Numeric (counts)
+    if (/^\d+$/.test(content.trim())) {
+        return <span className="font-mono text-blue-400">{cleaned}</span>;
+    }
+    
+    // First column - bold
+    if (isFirstColumn) {
+        return <span className="font-medium">{cleaned}</span>;
+    }
+    
+    return <span>{cleaned}</span>;
+}
+
+function cleanEmoji(text: string): string {
+    // Keep the text as is, including emojis
+    return text
+        .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold markdown
+        .trim();
 }

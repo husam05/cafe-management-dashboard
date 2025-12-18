@@ -170,7 +170,13 @@ export default async function DashboardPage() {
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
 
                 {/* Chart Section */}
-                <SalesChart data={salesData.chartData} />
+                <SalesChart 
+                    data={salesData.chartData} 
+                    avgDailySales={salesData.avgDailySales}
+                    todaySales={salesData.todaySales}
+                    yesterdaySales={salesData.yesterdaySales}
+                    salesChangePercent={salesData.salesChangePercent}
+                />
 
                 {/* Recent Transactions List */}
                 <GlassCard className="col-span-3">

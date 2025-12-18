@@ -59,6 +59,9 @@ function parseJsonEntry(entry: any, type: string): any {
     return entry;
 }
 
+// Check if running on Vercel
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV !== undefined;
+
 // SIMPLIFIED JSON LOADER FOR BACKWARD COMPATIBILITY
 // Note: This is a "Best Effort" mapping. 
 // If specific fields are missing, it might break. 
@@ -75,7 +78,10 @@ async function loadJsonData(): Promise<DatabaseData> {
     // Update config version tracker
     lastConfigVersion = currentConfigVersion;
 
-    const filePath = path.join(process.cwd(), '../cafe_management.json');
+    // On Vercel, use public folder; locally, use parent directory
+    const filePath = isVercel 
+        ? path.join(process.cwd(), 'public/cafe_management.json')
+        : path.join(process.cwd(), '../cafe_management.json');
     try {
         const fileContents = await fs.readFile(filePath, 'utf8');
         const jsonData = JSON.parse(fileContents);

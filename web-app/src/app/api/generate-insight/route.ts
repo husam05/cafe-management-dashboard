@@ -10,6 +10,13 @@ import {
     generateAnomaliesReport, 
     generateRecommendationsReport 
 } from '@/lib/ai-insights';
+import {
+    loadCsvData,
+    generateCsvFullReport,
+    generateCsvForecastReport,
+    generateCsvAnomaliesReport,
+    generateCsvRecommendationsReport
+} from '@/lib/csv-ai-insights';
 
 // Check if running on Vercel (serverless)
 const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV !== undefined;
@@ -104,12 +111,40 @@ export async function POST(req: Request) {
         // Validate and sanitize input
         const prompt = validatePrompt(body.prompt);
 
-        // Fetch Live Data
-        const dbData = await loadData();
-
-        // On Vercel or if Python not available, use JavaScript AI engine
+        // On Vercel, use CSV-based AI engine (richer data)
         if (isVercel) {
-            console.log('Using JavaScript AI engine (Vercel environment)');
+            console.log('Using CSV AI engine (Vercel environment)');
+            
+            // Try CSV data first (more comprehensive)
+            const csvData = await loadCsvData();
+            
+            if (csvData && (csvData.orders.length > 0 || csvData.dailyReceipts.length > 0)) {
+                console.log(`CSV loaded: ${csvData.orders.length} orders, ${csvData.dailyReceipts.length} receipts`);
+                let result: string;
+                
+                switch (prompt) {
+                    case 'full_report':
+                        result = generateCsvFullReport(csvData);
+                        break;
+                    case 'forecast_only':
+                        result = generateCsvForecastReport(csvData);
+                        break;
+                    case 'detect_anomalies':
+                        result = generateCsvAnomaliesReport(csvData);
+                        break;
+                    case 'recommendations':
+                        result = generateCsvRecommendationsReport(csvData);
+                        break;
+                    default:
+                        result = generateCsvFullReport(csvData);
+                }
+                
+                return NextResponse.json({ text: result });
+            }
+            
+            // Fallback to JSON data
+            console.log('Falling back to JSON data');
+            const dbData = await loadData();
             let result: string;
             
             switch (prompt) {
@@ -132,7 +167,34 @@ export async function POST(req: Request) {
             return NextResponse.json({ text: result });
         }
 
-        // Local development: Try Python first, fallback to JS
+        // Local development: Try CSV first, then Python, then JS fallback
+        const csvData = await loadCsvData();
+        if (csvData && (csvData.orders.length > 0 || csvData.dailyReceipts.length > 0)) {
+            console.log(`Using CSV data: ${csvData.orders.length} orders`);
+            let result: string;
+            
+            switch (prompt) {
+                case 'full_report':
+                    result = generateCsvFullReport(csvData);
+                    break;
+                case 'forecast_only':
+                    result = generateCsvForecastReport(csvData);
+                    break;
+                case 'detect_anomalies':
+                    result = generateCsvAnomaliesReport(csvData);
+                    break;
+                case 'recommendations':
+                    result = generateCsvRecommendationsReport(csvData);
+                    break;
+                default:
+                    result = generateCsvFullReport(csvData);
+            }
+            
+            return NextResponse.json({ text: result });
+        }
+        
+        // Fallback: Try Python
+        const dbData = await loadData();
         const pythonPath = process.env.PYTHON_PATH || '/home/ai/miniconda3/envs/webai/bin/python';
         const scriptPath = path.join(process.cwd(), 'scripts/predict_custom.py');
 
