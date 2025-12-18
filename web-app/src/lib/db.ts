@@ -4,12 +4,20 @@ import path from 'path';
 import { getConfig, getConfigVersion } from './config';
 import { prisma } from './prisma';
 import {
-    Category, MenuItem, OrderItem, DailyReceipt, Expense, Ingredient,
-    InventoryTransaction, Staff, Order, Payment
+    Category, Product, SaleItem, DailySummary, Expense, InventoryItem,
+    InventoryMovement, Employee, Sale, Payment
 } from '@prisma/client';
 
+// Create aliases for backward compatibility
+type MenuItem = Product;
+type OrderItem = SaleItem;
+type DailyReceipt = DailySummary;
+type Ingredient = InventoryItem;
+type Order = Sale;
+type Staff = Employee;
+
 // Re-export types for usage in components if needed
-export type { Category, MenuItem, OrderItem, DailyReceipt, Expense, Ingredient, InventoryTransaction, Staff };
+export type { Category, MenuItem, OrderItem, DailyReceipt, Expense, Ingredient, InventoryMovement as InventoryTransaction, Staff };
 
 export interface DatabaseData {
     Categories: Category[];
@@ -211,20 +219,20 @@ async function loadPrismaData(): Promise<DatabaseData> {
     try {
         const [categories, menuItems, orderItems, dailyReceipts, expenses, ingredients] = await Promise.all([
             prisma.category.findMany(),
-            prisma.menuItem.findMany(),
-            prisma.orderItem.findMany(),
-            prisma.dailyReceipt.findMany(),
+            prisma.product.findMany(),
+            prisma.saleItem.findMany(),
+            prisma.dailySummary.findMany(),
             prisma.expense.findMany(),
-            prisma.ingredient.findMany()
+            prisma.inventoryItem.findMany()
         ]);
 
         return {
-            Categories: categories,
-            MenuItems: menuItems,
-            OrderItems: orderItems,
-            DailyReceipts: dailyReceipts,
-            Expenses: expenses,
-            Ingredients: ingredients
+            Categories: categories as any,
+            MenuItems: menuItems as any,
+            OrderItems: orderItems as any,
+            DailyReceipts: dailyReceipts as any,
+            Expenses: expenses as any,
+            Ingredients: ingredients as any
         };
     } catch (error) {
         console.error("Prisma Database Error:", error);
@@ -253,12 +261,13 @@ export async function getSalesStats() {
 
     const toNum = (v: any) => v && v.toNumber ? v.toNumber() : (Number(v) || 0);
 
-    const totalSales = receipts.reduce((acc, r) => acc + toNum(r.totalSales), 0);
+    const totalSales = receipts.reduce((acc, r) => acc + toNum((r as any).totalSales || (r as any).totalRevenue), 0);
 
     // Group by date for chart
     const salesByDate = receipts.reduce((acc: Record<string, number>, r) => {
-        const dateStr = r.date ? r.date.toISOString().split('T')[0] : 'Unknown';
-        acc[dateStr] = (acc[dateStr] || 0) + toNum(r.totalSales);
+        const dateObj = (r as any).date || (r as any).businessDate;
+        const dateStr = dateObj ? dateObj.toISOString().split('T')[0] : 'Unknown';
+        acc[dateStr] = (acc[dateStr] || 0) + toNum((r as any).totalSales || (r as any).totalRevenue);
         return acc;
     }, {});
 
@@ -302,16 +311,17 @@ export async function getTopProducts() {
 
     const counts: Record<number, number> = {};
     items.forEach(item => {
-        const qty = item.quantity; // Int
-        counts[item.menuItemId] = (counts[item.menuItemId] || 0) + qty;
+        const qty = Number((item as any).quantity || (item as any).qty || 1);
+        const itemId = Number((item as any).menuItemId || (item as any).productId);
+        counts[itemId] = (counts[itemId] || 0) + qty;
     });
 
     const topProducts = Object.entries(counts)
         .map(([idStr, count]) => {
             const id = parseInt(idStr);
-            const menuItem = menu.find(m => m.id === id);
+            const menuItem = menu.find(m => Number(m.id) === id);
             return {
-                name: menuItem ? menuItem.name : `Unknown Item (${id})`,
+                name: menuItem ? ((menuItem as any).name || (menuItem as any).productName) : `Unknown Item (${id})`,
                 count
             };
         })
@@ -332,7 +342,8 @@ export async function getExpensesStats() {
     // Group expenses by date for comparison
     const expensesByDate: Record<string, number> = {};
     expenses.forEach(e => {
-        const dateStr = e.date ? new Date(e.date).toISOString().split('T')[0] : 'Unknown';
+        const dateObj = (e as any).date || (e as any).expenseDate;
+        const dateStr = dateObj ? new Date(dateObj).toISOString().split('T')[0] : 'Unknown';
         expensesByDate[dateStr] = (expensesByDate[dateStr] || 0) + toNum(e.amount);
     });
 
@@ -349,7 +360,8 @@ export async function getExpensesStats() {
     }
 
     const byCategory = expenses.reduce((acc: any, e) => {
-        acc[e.category] = (acc[e.category] || 0) + toNum(e.amount);
+        const cat = (e as any).category || (e as any).categoryId || 'غير مصنف';
+        acc[cat] = (acc[cat] || 0) + toNum(e.amount);
         return acc;
     }, {});
 
@@ -375,13 +387,14 @@ export async function getSalesByCategory() {
     const salesByCategory: Record<string, number> = {};
 
     items.forEach(item => {
-        const menuItem = menu.find(m => m.id === item.menuItemId);
+        const itemProductId = Number((item as any).menuItemId || (item as any).productId);
+        const menuItem = menu.find(m => Number(m.id) === itemProductId);
         if (!menuItem) return;
 
-        const category = categories.find(c => c.id === menuItem.categoryId);
-        const categoryName = category ? category.name : 'Unknown';
+        const category = categories.find(c => Number(c.id) === Number((menuItem as any).categoryId));
+        const categoryName = category ? ((category as any).name || (category as any).categoryName) : 'Unknown';
 
-        const price = toNum(item.price) * item.quantity;
+        const price = toNum((item as any).price || (item as any).unitPrice) * Number((item as any).quantity || (item as any).qty || 1);
         salesByCategory[categoryName] = (salesByCategory[categoryName] || 0) + price;
     });
 
@@ -397,12 +410,13 @@ export async function getSalesByHour() {
     const salesByHour: Record<string, number> = {};
 
     items.forEach(item => {
-        if (!item.createdAt) return;
-        const date = new Date(item.createdAt);
+        const createdAt = (item as any).createdAt;
+        if (!createdAt) return;
+        const date = new Date(createdAt);
         const hour = date.getHours();
         const hourLabel = `${hour}:00`;
 
-        const price = toNum(item.price) * item.quantity;
+        const price = toNum((item as any).price || (item as any).unitPrice) * Number((item as any).quantity || (item as any).qty || 1);
         salesByHour[hourLabel] = (salesByHour[hourLabel] || 0) + price;
     });
 
@@ -420,10 +434,10 @@ export async function getInventory() {
 
     return ingredients.map(i => ({
         ...i,
-        currentStock: toNum(i.currentStock),
-        minStock: toNum(i.minStock),
-        maxStock: toNum(i.maxStock),
-        costPerUnit: toNum(i.costPerUnit)
+        currentStock: toNum((i as any).currentStock),
+        minStock: toNum((i as any).minStock || (i as any).reorderLevel),
+        maxStock: toNum((i as any).maxStock),
+        costPerUnit: toNum((i as any).costPerUnit)
     }));
 }
 
@@ -432,7 +446,7 @@ export async function getRecentReceipts(limit = 5) {
     const receipts = data.DailyReceipts;
 
     return receipts
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .sort((a, b) => new Date((b as any).createdAt || (b as any).updatedAt || 0).getTime() - new Date((a as any).createdAt || (a as any).updatedAt || 0).getTime())
         .slice(0, limit);
 }
 
@@ -443,17 +457,18 @@ export async function getRecentTransactions(limit = 5) {
 
     const toNum = (v: any) => v && v.toNumber ? v.toNumber() : (Number(v) || 0);
 
-    const sortedItems = items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    const sortedItems = items.sort((a, b) => new Date((b as any).createdAt || 0).getTime() - new Date((a as any).createdAt || 0).getTime())
         .slice(0, limit);
 
     return sortedItems.map(item => {
-        const menuItem = menu.find(m => m.id === item.menuItemId);
+        const itemProductId = Number((item as any).menuItemId || (item as any).productId);
+        const menuItem = menu.find(m => Number(m.id) === itemProductId);
         return {
             id: item.id.toString(), // Convert ID to string for consistency
-            date: item.createdAt,
-            itemName: menuItem ? menuItem.name : 'Unknown Item',
-            amount: toNum(item.price) * item.quantity,
-            status: item.status
+            date: (item as any).createdAt,
+            itemName: menuItem ? ((menuItem as any).name || (menuItem as any).productName) : 'Unknown Item',
+            amount: toNum((item as any).price || (item as any).unitPrice) * Number((item as any).quantity || (item as any).qty || 1),
+            status: (item as any).status
         };
     });
 }
@@ -464,8 +479,8 @@ export async function getShiftStats() {
     const toNum = (v: any) => v && v.toNumber ? v.toNumber() : (Number(v) || 0);
 
     const sorted = receipts.sort((a, b) => {
-        const tA = a.openedAt ? new Date(a.openedAt).getTime() : 0;
-        const tB = b.openedAt ? new Date(b.openedAt).getTime() : 0;
+        const tA = (a as any).openedAt || (a as any).businessDate ? new Date((a as any).openedAt || (a as any).businessDate).getTime() : 0;
+        const tB = (b as any).openedAt || (b as any).businessDate ? new Date((b as any).openedAt || (b as any).businessDate).getTime() : 0;
         return tB - tA;
     });
 
@@ -477,26 +492,26 @@ export async function getShiftStats() {
 
     // Note: SQL definition had default(false).
 
-    const currentShift = sorted.find(r => r.isClosed === false);
-    const lastClosedShift = sorted.find(r => r.isClosed === true);
+    const currentShift = sorted.find(r => (r as any).isClosed === false);
+    const lastClosedShift = sorted.find(r => (r as any).isClosed === true);
 
     const discrepancyShifts = sorted.slice(0, 5)
-        .filter(r => toNum(r.discrepancy) !== 0)
+        .filter(r => toNum((r as any).discrepancy) !== 0)
         .map(r => ({
             ...r,
-            discrepancy: toNum(r.discrepancy),
-            openingCash: toNum(r.openingCash),
-            totalSales: toNum(r.totalSales),
-            totalExpenses: toNum(r.totalExpenses),
-            closingCash: toNum(r.closingCash),
-            expectedCash: toNum(r.expectedCash)
+            discrepancy: toNum((r as any).discrepancy),
+            openingCash: toNum((r as any).openingCash),
+            totalSales: toNum((r as any).totalSales || (r as any).totalRevenue),
+            totalExpenses: toNum((r as any).totalExpenses),
+            closingCash: toNum((r as any).closingCash),
+            expectedCash: toNum((r as any).expectedCash)
         }));
 
     const mapShift = (r: any) => r ? ({
         ...r,
         discrepancy: toNum(r.discrepancy),
         openingCash: toNum(r.openingCash),
-        totalSales: toNum(r.totalSales),
+        totalSales: toNum(r.totalSales || r.totalRevenue),
         totalExpenses: toNum(r.totalExpenses),
         closingCash: toNum(r.closingCash),
         expectedCash: toNum(r.expectedCash)
@@ -518,14 +533,16 @@ export async function getDailyPerformance() {
     // Group expenses by date
     const expensesByDate: Record<string, number> = {};
     expenses.forEach(e => {
-        const dateKey = new Date(e.date).toISOString().split('T')[0];
+        const dateObj = (e as any).date || (e as any).expenseDate;
+        const dateKey = new Date(dateObj).toISOString().split('T')[0];
         expensesByDate[dateKey] = (expensesByDate[dateKey] || 0) + toNum(e.amount);
     });
 
     // Create daily performance records
     const dailyData = receipts.map(r => {
-        const dateKey = new Date(r.date).toISOString().split('T')[0];
-        const income = toNum(r.totalSales);
+        const dateObj = (r as any).date || (r as any).businessDate;
+        const dateKey = new Date(dateObj).toISOString().split('T')[0];
+        const income = toNum((r as any).totalSales || (r as any).totalRevenue);
         const dayExpenses = expensesByDate[dateKey] || 0;
         const net = income - dayExpenses;
 

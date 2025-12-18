@@ -98,16 +98,16 @@ function processDailyData(data: DatabaseData): DailySummary[] {
     // First try DailyReceipts - most accurate source
     if (data.DailyReceipts && data.DailyReceipts.length > 0) {
         data.DailyReceipts.forEach(receipt => {
-            const dateObj = receipt.date;
+            const dateObj = (receipt as any).date || (receipt as any).businessDate;
             if (!dateObj) return;
             
             const date = dateObj.toISOString().split('T')[0];
             const dayOfWeek = dateObj.getDay();
             
             // Handle Decimal type
-            const totalSales = typeof receipt.totalSales === 'object' 
-                ? Number(receipt.totalSales) 
-                : Number(receipt.totalSales || 0);
+            const totalSales = typeof (receipt as any).totalSales === 'object' 
+                ? Number((receipt as any).totalSales) 
+                : Number((receipt as any).totalSales || (receipt as any).totalRevenue || 0);
             
             const totalExpenses = typeof receipt.totalExpenses === 'object'
                 ? Number(receipt.totalExpenses)
@@ -127,14 +127,14 @@ function processDailyData(data: DatabaseData): DailySummary[] {
     // If no DailyReceipts, aggregate from OrderItems
     if (dailyMap.size === 0 && data.OrderItems && data.OrderItems.length > 0) {
         data.OrderItems.forEach(item => {
-            const dateObj = item.createdAt;
+            const dateObj = (item as any).createdAt || (item as any).date;
             if (!dateObj) return;
             
             const date = dateObj.toISOString().split('T')[0];
             const dayOfWeek = dateObj.getDay();
             
-            const price = typeof item.price === 'object' ? Number(item.price) : Number(item.price || 0);
-            const revenue = price * (item.quantity || 1);
+            const price = typeof (item as any).price === 'object' ? Number((item as any).price) : Number((item as any).price || (item as any).unitPrice || 0);
+            const revenue = price * ((item as any).quantity || (item as any).qty || 1);
             
             const existing = dailyMap.get(date) || {
                 date,
@@ -298,19 +298,20 @@ function analyzeProducts(data: DatabaseData): ProductAnalysis[] {
     
     const menuLookup = new Map<number, string>();
     data.MenuItems.forEach(item => {
-        menuLookup.set(item.id, item.name || `منتج ${item.id}`);
+        menuLookup.set(Number(item.id), (item as any).name || (item as any).productName || `منتج ${item.id}`);
     });
     
     const productStats = new Map<string, { quantity: number; revenue: number }>();
     
     data.OrderItems.forEach(item => {
-        const name = menuLookup.get(item.menuItemId) || `منتج ${item.menuItemId}`;
-        const price = typeof item.price === 'object' ? Number(item.price) : Number(item.price || 0);
-        const qty = item.quantity || 1;
+        const itemId = Number((item as any).menuItemId || (item as any).productId);
+        const name = menuLookup.get(itemId) || `منتج ${itemId}`;
+        const price = typeof (item as any).price === 'object' ? Number((item as any).price) : Number((item as any).price || (item as any).unitPrice || 0);
+        const qty = (item as any).quantity || (item as any).qty || 1;
         
         const existing = productStats.get(name) || { quantity: 0, revenue: 0 };
-        existing.quantity += qty;
-        existing.revenue += price * qty;
+        existing.quantity += Number(qty);
+        existing.revenue += Number(price) * Number(qty);
         productStats.set(name, existing);
     });
     
