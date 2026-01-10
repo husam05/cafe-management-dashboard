@@ -64,6 +64,13 @@ export async function getConfig(): Promise<SystemConfig> {
 }
 
 export async function saveConfig(config: SystemConfig) {
+    // Check if running on Vercel (serverless environment)
+    const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
+    
+    if (isVercel) {
+        throw new Error('Cannot save configuration on Vercel. Please set DATABASE_URL and DATA_SOURCE environment variables in Vercel Dashboard → Settings → Environment Variables.');
+    }
+    
     try {
         await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
         // Increment version to invalidate all caches

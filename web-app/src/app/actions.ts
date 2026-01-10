@@ -26,5 +26,10 @@ export async function updateSystemConfig(config: SystemConfig) {
 }
 
 export async function getSystemConfig() {
-    return await getConfig();
+    const config = await getConfig();
+    return {
+        ...config,
+        isVercel: process.env.VERCEL === '1' || !!process.env.VERCEL_ENV,
+        hasEnvDatabaseUrl: !!process.env.DATABASE_URL
+    };
 }

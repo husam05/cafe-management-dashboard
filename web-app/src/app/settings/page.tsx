@@ -27,6 +27,8 @@ export default function SettingsPage() {
     const [database, setDatabase] = useState("cafe_management")
     const [status, setStatus] = useState<"idle" | "success" | "error">("idle")
     const [errorMessage, setErrorMessage] = useState("")
+    const [isVercel, setIsVercel] = useState(false)
+    const [hasEnvDatabaseUrl, setHasEnvDatabaseUrl] = useState(false)
     
     // File upload state
     const [uploading, setUploading] = useState(false)
@@ -53,8 +55,10 @@ export default function SettingsPage() {
     }
 
     useEffect(() => {
-        getSystemConfig().then(config => {
+        getSystemConfig().then((config: any) => {
             setDbType(config.dataSource)
+            setIsVercel(config.isVercel || false)
+            setHasEnvDatabaseUrl(config.hasEnvDatabaseUrl || false)
             if (config.mysql) {
                 setHost(config.mysql.host)
                 setUser(config.mysql.user)
@@ -152,6 +156,31 @@ export default function SettingsPage() {
                 <h2 className="text-3xl font-bold tracking-tight">System Settings</h2>
             </div>
 
+            {/* Vercel Environment Notice */}
+            {isVercel && (
+                <Alert className={hasEnvDatabaseUrl ? "border-green-500 bg-green-50" : "border-yellow-500 bg-yellow-50"}>
+                    <AlertCircle className={`h-4 w-4 ${hasEnvDatabaseUrl ? "text-green-600" : "text-yellow-600"}`} />
+                    <AlertTitle className={hasEnvDatabaseUrl ? "text-green-800" : "text-yellow-800"}>
+                        {hasEnvDatabaseUrl ? "✅ متصل بقاعدة البيانات | Connected to Database" : "⚠️ بيئة Vercel | Vercel Environment"}
+                    </AlertTitle>
+                    <AlertDescription className={hasEnvDatabaseUrl ? "text-green-700" : "text-yellow-700"}>
+                        {hasEnvDatabaseUrl ? (
+                            "قاعدة البيانات متصلة عبر متغيرات البيئة. | Database connected via environment variables."
+                        ) : (
+                            <>
+                                لا يمكن حفظ الإعدادات على Vercel. يجب ضبط متغيرات البيئة من لوحة تحكم Vercel.
+                                <br />
+                                Cannot save settings on Vercel. Set environment variables in Vercel Dashboard → Settings → Environment Variables:
+                                <br />
+                                <code className="bg-yellow-100 px-1 rounded text-sm">DATA_SOURCE=mysql</code>
+                                <br />
+                                <code className="bg-yellow-100 px-1 rounded text-sm">DATABASE_URL=mysql://hossam:password@db.lenteagency.com:3306/cafe_management</code>
+                            </>
+                        )}
+                    </AlertDescription>
+                </Alert>
+            )}
+
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 <Card className="col-span-2">
                     <CardHeader>
@@ -161,7 +190,7 @@ export default function SettingsPage() {
                     <CardContent className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="source-type">Data Source</Label>
-                            <Select value={dbType} onValueChange={setDbType}>
+                            <Select value={dbType} onValueChange={setDbType} disabled={isVercel}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="Select Source" />
                                 </SelectTrigger>
