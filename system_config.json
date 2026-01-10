@@ -1,3 +1,19 @@
 {
-  "dataSource": "json"
+  "dataSource": "json",
+  "performance": {
+    "enableCache": true,
+    "cacheTTL": 300000,
+    "enableCompression": true,
+    "optimizeImages": true
+  },
+  "features": {
+    "enableAI": true,
+    "enableAnalytics": true,
+    "enableRealTimeUpdates": false
+  },
+  "database": {
+    "connectionPoolSize": 10,
+    "queryTimeout": 30000,
+    "enableQueryLogging": false
+  }
 }

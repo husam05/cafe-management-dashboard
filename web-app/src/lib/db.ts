@@ -26,20 +26,28 @@ export interface DatabaseData {
     DailyReceipts: DailyReceipt[];
     Expenses: Expense[];
     Ingredients: Ingredient[];
+    Orders: any[];
 }
 
-// Global cache for JSON
+// Global cache for JSON with improved TTL
 let cachedData: DatabaseData | null = null;
 let lastFetch = 0;
 let lastConfigVersion = -1; // Track config version for cache invalidation
-const CACHE_TTL = 60000; // 1 minute
+const CACHE_TTL = 300000; // 5 minutes (increased from 1 minute for better performance)
 
 // Function to clear cache (called when settings change)
 export function clearDataCache(): void {
     cachedData = null;
     lastFetch = 0;
     lastConfigVersion = -1;
-    console.log('Data cache cleared');
+    console.log('Data cache cleared - ready for fresh data');
+}
+
+// Preload cache on startup for faster first load
+export function preloadCache(): void {
+    if (typeof window === 'undefined') {
+        loadJsonData().catch(err => console.warn('Cache preload failed:', err));
+    }
 }
 
 // Helper to parse JSON string fields to match Prisma types
@@ -205,26 +213,63 @@ async function loadJsonData(): Promise<DatabaseData> {
             OrderItems: orderItems,
             DailyReceipts: receipts,
             Expenses: expenses,
-            Ingredients: ingredients
+            Ingredients: ingredients,
+            Orders: []
         };
         lastFetch = now;
         return cachedData;
     } catch (error) {
         console.error("Failed to load JSON data:", error);
-        return { Categories: [], MenuItems: [], OrderItems: [], DailyReceipts: [], Expenses: [], Ingredients: [] };
+        return { Categories: [], MenuItems: [], OrderItems: [], DailyReceipts: [], Expenses: [], Ingredients: [], Orders: [] };
     }
 }
 
-async function loadPrismaData(): Promise<DatabaseData> {
+    async function loadPrismaData(): Promise<DatabaseData> {
     try {
-        const [categories, menuItems, orderItems, dailyReceipts, expenses, ingredients] = await Promise.all([
+        const [categories, menuItems, orderItems, rawShifts, rawExpenses, ingredients, orders] = await Promise.all([
             prisma.category.findMany(),
             prisma.product.findMany(),
             prisma.saleItem.findMany(),
-            prisma.dailySummary.findMany(),
-            prisma.expense.findMany(),
-            prisma.inventoryItem.findMany()
+            prisma.shift.findMany({
+                include: { openedBy: true }
+            }), 
+            prisma.expense.findMany({
+                select: {
+                    id: true,
+                    expenseDate: true,
+                    category: true,
+                    amount: true,
+                    description: true,
+                    receiptUrl: true,
+                    createdAt: true,
+                    paidById: true
+                }
+            }),
+            prisma.inventoryItem.findMany(),
+            prisma.sale.findMany({
+                select: {
+                    id: true,
+                    businessDate: true,
+                    total: true
+                }
+            })
         ]);
+
+        // Map Shifts to flatten openedBy name and handle BigInts
+        const dailyReceipts = rawShifts.map(s => ({
+            ...s,
+            id: s.id.toString(),
+            openedBy: s.openedBy?.fullName || "Unknown",
+            openedById: s.openedById?.toString() || null,
+            closedById: s.closedById?.toString() || null,
+        }));
+
+        // Map Expenses to handle BigInts and validation
+        const expenses = rawExpenses.map(e => ({
+            ...e,
+            id: e.id.toString(),
+            amount: Number(e.amount), // Ensure number
+        }));
 
         return {
             Categories: categories as any,
@@ -232,7 +277,8 @@ async function loadPrismaData(): Promise<DatabaseData> {
             OrderItems: orderItems as any,
             DailyReceipts: dailyReceipts as any,
             Expenses: expenses as any,
-            Ingredients: ingredients as any
+            Ingredients: ingredients as any,
+            Orders: orders as any
         };
     } catch (error) {
         console.error("Prisma Database Error:", error);
@@ -257,17 +303,20 @@ export async function loadData(): Promise<DatabaseData> {
 
 export async function getSalesStats() {
     const data = await loadData();
-    const receipts = data.DailyReceipts;
+    // CRITICAL FIX: Use Orders (actual sales) instead of DailyReceipts (shift summaries)
+    // DailyReceipts.totalSales is not synchronized with actual orders
+    const orders = data.Orders;
 
     const toNum = (v: any) => v && v.toNumber ? v.toNumber() : (Number(v) || 0);
 
-    const totalSales = receipts.reduce((acc, r) => acc + toNum((r as any).totalSales || (r as any).totalRevenue), 0);
+    // Calculate total sales from actual orders
+    const totalSales = orders.reduce((acc, o) => acc + toNum((o as any).total || (o as any).totalAmount), 0);
 
     // Group by date for chart
-    const salesByDate = receipts.reduce((acc: Record<string, number>, r) => {
-        const dateObj = (r as any).date || (r as any).businessDate;
-        const dateStr = dateObj ? dateObj.toISOString().split('T')[0] : 'Unknown';
-        acc[dateStr] = (acc[dateStr] || 0) + toNum((r as any).totalSales || (r as any).totalRevenue);
+    const salesByDate = orders.reduce((acc: Record<string, number>, o) => {
+        const dateObj = (o as any).businessDate || (o as any).orderDate;
+        const dateStr = dateObj ? new Date(dateObj).toISOString().split('T')[0] : 'Unknown';
+        acc[dateStr] = (acc[dateStr] || 0) + toNum((o as any).total || (o as any).totalAmount);
         return acc;
     }, {});
 
@@ -404,15 +453,24 @@ export async function getSalesByCategory() {
 export async function getSalesByHour() {
     const data = await loadData();
     const items = data.OrderItems;
+    const orders = data.Orders || [];
+
+    const orderDateMap = new Map<number, Date>();
+    orders.forEach((o: any) => {
+        const d = o.businessDate ? new Date(o.businessDate) : (o.createdAt ? new Date(o.createdAt) : null);
+        if (d) orderDateMap.set(Number(o.id), d);
+    });
 
     const toNum = (v: any) => v && v.toNumber ? v.toNumber() : (Number(v) || 0);
 
     const salesByHour: Record<string, number> = {};
 
     items.forEach(item => {
-        const createdAt = (item as any).createdAt;
-        if (!createdAt) return;
-        const date = new Date(createdAt);
+        const orderId = Number((item as any).saleId || (item as any).orderId);
+        const date = orderDateMap.get(orderId);
+        
+        if (!date) return;
+
         const hour = date.getHours();
         const hourLabel = `${hour}:00`;
 
@@ -454,18 +512,38 @@ export async function getRecentTransactions(limit = 5) {
     const data = await loadData();
     const items = data.OrderItems;
     const menu = data.MenuItems;
-
+    const orders = data.Orders || [];
     const toNum = (v: any) => v && v.toNumber ? v.toNumber() : (Number(v) || 0);
 
-    const sortedItems = items.sort((a, b) => new Date((b as any).createdAt || 0).getTime() - new Date((a as any).createdAt || 0).getTime())
-        .slice(0, limit);
+    const orderDateMap = new Map<number, Date>();
+    orders.forEach((o: any) => {
+        const d = o.businessDate ? new Date(o.businessDate) : null;
+        if (d) orderDateMap.set(Number(o.id), d);
+    });
+
+    const sortedItems = [...items].sort((a, b) => {
+        const orderIdA = Number((a as any).saleId || (a as any).orderId);
+        const orderIdB = Number((b as any).saleId || (b as any).orderId);
+        const dateA = orderDateMap.get(orderIdA);
+        const dateB = orderDateMap.get(orderIdB);
+        
+        if (!dateA) return 1;
+        if (!dateB) return -1;
+        
+        if (dateB.getTime() === dateA.getTime()) {
+            return Number(b.id) - Number(a.id);
+        }
+        return dateB.getTime() - dateA.getTime();
+    }).slice(0, limit);
 
     return sortedItems.map(item => {
         const itemProductId = Number((item as any).menuItemId || (item as any).productId);
         const menuItem = menu.find(m => Number(m.id) === itemProductId);
+        const orderId = Number((item as any).saleId || (item as any).orderId);
+
         return {
-            id: item.id.toString(), // Convert ID to string for consistency
-            date: (item as any).createdAt,
+            id: item.id.toString(),
+            date: orderDateMap.get(orderId) || new Date(),
             itemName: menuItem ? ((menuItem as any).name || (menuItem as any).productName) : 'Unknown Item',
             amount: toNum((item as any).price || (item as any).unitPrice) * Number((item as any).quantity || (item as any).qty || 1),
             status: (item as any).status

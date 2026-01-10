@@ -3,6 +3,10 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { clearDataCache } from '@/lib/db';
 import { incrementConfigVersion } from '@/lib/config';
+import { exec } from 'child_process';
+import util from 'util';
+
+const execAsync = util.promisify(exec);
 
 // Maximum file size: 50MB
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -28,11 +32,12 @@ export async function POST(req: Request) {
             );
         }
 
-        // Validate file type
-        const allowedTypes = ['application/json', 'text/csv', 'application/sql'];
-        const allowedExtensions = ['.json', '.csv', '.sql'];
-        
         const fileName = file.name.toLowerCase();
+        const isSql = fileName.endsWith('.sql');
+        const isJson = fileName.endsWith('.json');
+        
+        // Validate file type
+        const allowedExtensions = ['.json', '.csv', '.sql'];
         const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
         
         if (!hasValidExtension) {
@@ -48,7 +53,7 @@ export async function POST(req: Request) {
         const content = buffer.toString('utf-8');
 
         // Validate JSON structure if it's a JSON file
-        if (fileName.endsWith('.json')) {
+        if (isJson) {
             try {
                 const jsonData = JSON.parse(content);
                 
@@ -81,16 +86,14 @@ export async function POST(req: Request) {
 
         // Determine destination path
         const projectRoot = path.resolve(process.cwd(), '..');
-        let destinationPath: string;
+        let destinationPath = path.join(projectRoot, file.name);
 
-        if (fileName.endsWith('.json')) {
+        if (isJson) {
             destinationPath = path.join(projectRoot, 'cafe_management.json');
         } else if (fileName.endsWith('.csv')) {
             destinationPath = path.join(projectRoot, 'cafe_management.csv');
-        } else if (fileName.endsWith('.sql')) {
+        } else if (isSql) {
             destinationPath = path.join(projectRoot, 'cafe_management.sql');
-        } else {
-            destinationPath = path.join(projectRoot, file.name);
         }
 
         // Backup existing file if it exists
@@ -104,9 +107,53 @@ export async function POST(req: Request) {
         }
 
         // Write new file
-        await fs.writeFile(destinationPath, content, 'utf-8');
+        await fs.writeFile(destinationPath, buffer); // Use buffer for SQL/all files to be safe
 
-        // Clear cache and increment config version
+        // Logic for SQL Refresh
+        if (isSql) {
+            try {
+                console.log('🔄 Starting Database Refresh Workflow...');
+                
+                // 1. Reset Database (Drop & Recreate) to prevent 'Table exists' errors
+                const resetCmd = `docker exec -i cafe_db_local mysql -u root -proot -e "DROP DATABASE IF EXISTS cafe_management; CREATE DATABASE cafe_management;"`;
+                console.log(`➡️ Resetting Database: ${resetCmd}`);
+                await execAsync(resetCmd);
+
+                // 2. Import SQL to Docker MySQL
+                const importCmd = `docker exec -i cafe_db_local mysql -u root -proot cafe_management < "${destinationPath}"`;
+                console.log(`➡️ Executing Import: ${importCmd}`);
+                await execAsync(importCmd);
+                console.log('✅ Import Successful');
+
+                // 3. Sync to CSV
+                const syncScript = path.join(process.cwd(), 'scripts', 'sync-db-to-csv.js');
+                const syncCmd = `node "${syncScript}"`;
+                console.log(`➡️ Executing Sync: ${syncCmd}`);
+                const { stdout, stderr } = await execAsync(syncCmd);
+                console.log('✅ Sync Output:', stdout);
+                if (stderr) console.error('⚠️ Sync Stderr:', stderr);
+
+                // Clear cache and increment version after successful refresh
+                clearDataCache();
+                incrementConfigVersion();
+
+                return NextResponse.json({
+                    success: true,
+                    message: 'Database updated and synchronized successfully!',
+                    fileName: file.name,
+                    details: 'Imported to MySQL & Synced to CSV'
+                });
+
+            } catch (cmdError: any) {
+                console.error('❌ Refresh Workflow Failed:', cmdError);
+                return NextResponse.json({
+                    error: `Database update failed: ${cmdError.message}`,
+                    details: cmdError.toString()
+                }, { status: 500 });
+            }
+        }
+
+        // Generic cache clear for non-SQL files
         clearDataCache();
         incrementConfigVersion();
 
@@ -135,7 +182,8 @@ export async function GET() {
     try {
         const projectRoot = path.resolve(process.cwd(), '..');
         const jsonPath = path.join(projectRoot, 'cafe_management.json');
-
+        // We could also check CSV or SQL file stats here if needed, but keeping original logic for JSON info
+        
         try {
             const stats = await fs.stat(jsonPath);
             const content = await fs.readFile(jsonPath, 'utf-8');
