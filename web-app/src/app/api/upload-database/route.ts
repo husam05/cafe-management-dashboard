@@ -13,6 +13,17 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 export async function POST(req: Request) {
     try {
+        // Check if running on Vercel (serverless environment)
+        const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
+        
+        if (isVercel) {
+            return NextResponse.json({
+                error: 'File upload is not available in serverless deployment',
+                message: 'Database files cannot be uploaded on Vercel. Please use the MySQL database connection instead.',
+                suggestion: 'Go to Settings and configure MySQL connection to db.lenteagency.com'
+            }, { status: 400 });
+        }
+
         const formData = await req.formData();
         const file = formData.get('file') as File | null;
         const fileType = formData.get('type') as string | null;
@@ -171,7 +182,10 @@ export async function POST(req: Request) {
     } catch (error) {
         console.error('Upload error:', error);
         return NextResponse.json(
-            { error: 'Failed to upload file. Please try again.' },
+            { 
+                error: 'Failed to upload file. Please try again.',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            },
             { status: 500 }
         );
     }

@@ -92,12 +92,16 @@ export default function SettingsPage() {
                 fetchFileInfo()
             } else {
                 setUploadStatus("error")
-                setUploadMessage(result.error || 'Upload failed')
+                const errorMessage = result.message 
+                    ? `${result.error}\n${result.message}${result.suggestion ? '\n' + result.suggestion : ''}`
+                    : result.error || 'Upload failed'
+                setUploadMessage(errorMessage)
             }
         } catch (e) {
             console.error('Upload error:', e)
             setUploadStatus("error")
-            setUploadMessage('فشل في رفع الملف. يرجى المحاولة مرة أخرى. | Upload failed. Please try again.')
+            const errorMsg = e instanceof Error ? e.message : 'فشل في رفع الملف. يرجى المحاولة مرة أخرى. | Upload failed. Please try again.'
+            setUploadMessage(errorMsg)
         } finally {
             setUploading(false)
             // Reset file input
