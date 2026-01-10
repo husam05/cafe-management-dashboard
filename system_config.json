@@ -1,19 +1,9 @@
 {
-  "dataSource": "json",
-  "performance": {
-    "enableCache": true,
-    "cacheTTL": 300000,
-    "enableCompression": true,
-    "optimizeImages": true
-  },
-  "features": {
-    "enableAI": true,
-    "enableAnalytics": true,
-    "enableRealTimeUpdates": false
-  },
-  "database": {
-    "connectionPoolSize": 10,
-    "queryTimeout": 30000,
-    "enableQueryLogging": false
+  "dataSource": "mysql",
+  "mysql": {
+    "host": "db.lenteagency.com",
+    "user": "hossam",
+    "password": "hossam@@123!!MM",
+    "database": "cafe_management"
   }
 }

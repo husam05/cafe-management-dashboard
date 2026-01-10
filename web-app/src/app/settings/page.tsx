@@ -26,6 +26,7 @@ export default function SettingsPage() {
     const [password, setPassword] = useState("")
     const [database, setDatabase] = useState("cafe_management")
     const [status, setStatus] = useState<"idle" | "success" | "error">("idle")
+    const [errorMessage, setErrorMessage] = useState("")
     
     // File upload state
     const [uploading, setUploading] = useState(false)
@@ -114,21 +115,30 @@ export default function SettingsPage() {
 
     const handleSave = async () => {
         setStatus("idle")
+        setErrorMessage("")
 
         if (dbType === "mysql" && !host) {
             setStatus("error")
+            setErrorMessage("Host is required for MySQL connection")
             return
         }
 
         try {
-            await updateSystemConfig({
+            const result = await updateSystemConfig({
                 dataSource: dbType as 'json' | 'mysql',
                 mysql: dbType === 'mysql' ? { host, user, password, database } : undefined
             })
-            setStatus("success")
+            
+            if (result.success) {
+                setStatus("success")
+            } else {
+                setStatus("error")
+                setErrorMessage(result.error || "Failed to save configuration")
+            }
         } catch (e) {
             console.error(e)
             setStatus("error")
+            setErrorMessage(e instanceof Error ? e.message : "An unexpected error occurred")
         }
     }
 
@@ -203,7 +213,9 @@ export default function SettingsPage() {
                             <Alert variant="destructive">
                                 <AlertCircle className="h-4 w-4" />
                                 <AlertTitle>خطأ / Error</AlertTitle>
-                                <AlertDescription>فشل في الحفظ. يرجى التحقق من الإعدادات. / Failed to save. Please check your settings.</AlertDescription>
+                                <AlertDescription>
+                                    {errorMessage || "فشل في الحفظ. يرجى التحقق من الإعدادات. / Failed to save. Please check your settings."}
+                                </AlertDescription>
                             </Alert>
                         )}
 
