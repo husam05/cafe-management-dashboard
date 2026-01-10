@@ -28,14 +28,34 @@ export interface SystemConfig {
 export async function getConfig(): Promise<SystemConfig> {
     // First check environment variable for data source
     const envDataSource = process.env.DATA_SOURCE;
-    if (envDataSource === 'mysql' || envDataSource === 'json') {
-        return { dataSource: envDataSource };
+    
+    // If mysql is requested, verify DATABASE_URL exists
+    if (envDataSource === 'mysql') {
+        if (process.env.DATABASE_URL) {
+            return { dataSource: 'mysql' };
+        } else {
+            // DATABASE_URL not set, fall back to JSON
+            console.warn('DATA_SOURCE=mysql but DATABASE_URL not set, falling back to JSON');
+            return { dataSource: 'json' };
+        }
+    }
+    
+    if (envDataSource === 'json') {
+        return { dataSource: 'json' };
     }
 
     // Fall back to config file
     try {
         const content = await fs.readFile(CONFIG_PATH, 'utf-8');
-        return JSON.parse(content);
+        const config = JSON.parse(content);
+        
+        // If config says mysql but no DATABASE_URL, fall back to JSON
+        if (config.dataSource === 'mysql' && !process.env.DATABASE_URL) {
+            console.warn('Config says mysql but DATABASE_URL not set, falling back to JSON');
+            return { dataSource: 'json' };
+        }
+        
+        return config;
     } catch (error) {
         // Log warning but don't crash - default to JSON
         console.warn('Config file not found, using default JSON data source');

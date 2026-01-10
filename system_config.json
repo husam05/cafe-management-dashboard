@@ -1,5 +1,5 @@
 {
-  "dataSource": "mysql",
+  "dataSource": "json",
   "mysql": {
     "host": "db.lenteagency.com",
     "user": "hossam",

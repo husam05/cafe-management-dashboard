@@ -94,10 +94,18 @@ async function loadJsonData(): Promise<DatabaseData> {
     // Update config version tracker
     lastConfigVersion = currentConfigVersion;
 
-    // On Vercel, use public folder; locally, use parent directory
-    const filePath = isVercel 
-        ? path.join(process.cwd(), 'public/cafe_management.json')
-        : path.join(process.cwd(), '../cafe_management.json');
+    // Try public folder first (works on Vercel and during build), then fall back to parent directory
+    const publicPath = path.join(process.cwd(), 'public/cafe_management.json');
+    const parentPath = path.join(process.cwd(), '../cafe_management.json');
+    
+    // Check which file exists
+    let filePath = publicPath;
+    try {
+        await fs.access(publicPath);
+    } catch {
+        // Public path doesn't exist, try parent path
+        filePath = parentPath;
+    }
     try {
         const fileContents = await fs.readFile(filePath, 'utf8');
         const jsonData = JSON.parse(fileContents);
@@ -256,7 +264,7 @@ async function loadJsonData(): Promise<DatabaseData> {
         ]);
 
         // Map Shifts to flatten openedBy name and handle BigInts
-        const dailyReceipts = rawShifts.map(s => ({
+        const dailyReceipts = rawShifts.map((s: any) => ({
             ...s,
             id: s.id.toString(),
             openedBy: s.openedBy?.fullName || "Unknown",
@@ -265,7 +273,7 @@ async function loadJsonData(): Promise<DatabaseData> {
         }));
 
         // Map Expenses to handle BigInts and validation
-        const expenses = rawExpenses.map(e => ({
+        const expenses = rawExpenses.map((e: any) => ({
             ...e,
             id: e.id.toString(),
             amount: Number(e.amount), // Ensure number
