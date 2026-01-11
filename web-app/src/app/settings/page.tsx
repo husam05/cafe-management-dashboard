@@ -29,11 +29,12 @@ export default function SettingsPage() {
     const [errorMessage, setErrorMessage] = useState("")
     const [isVercel, setIsVercel] = useState(false)
     const [hasEnvDatabaseUrl, setHasEnvDatabaseUrl] = useState(false)
-    
+
     // File upload state
     const [uploading, setUploading] = useState(false)
     const [uploadStatus, setUploadStatus] = useState<"idle" | "success" | "error">("idle")
     const [uploadMessage, setUploadMessage] = useState("")
+    const [importMode, setImportMode] = useState<"replace" | "append">("replace")
     const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
     const [loadingFileInfo, setLoadingFileInfo] = useState(true)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -81,6 +82,7 @@ export default function SettingsPage() {
             const formData = new FormData()
             formData.append('file', file)
             formData.append('type', file.name.split('.').pop() || 'json')
+            formData.append('mode', importMode)
 
             const response = await fetch('/api/upload-database', {
                 method: 'POST',
@@ -96,7 +98,7 @@ export default function SettingsPage() {
                 fetchFileInfo()
             } else {
                 setUploadStatus("error")
-                const errorMessage = result.message 
+                const errorMessage = result.message
                     ? `${result.error}\n${result.message}${result.suggestion ? '\n' + result.suggestion : ''}`
                     : result.error || 'Upload failed'
                 setUploadMessage(errorMessage)
@@ -136,7 +138,7 @@ export default function SettingsPage() {
                 dataSource: dbType as 'json' | 'mysql',
                 mysql: dbType === 'mysql' ? { host, user, password, database } : undefined
             })
-            
+
             if (result.success) {
                 setStatus("success")
             } else {
@@ -268,12 +270,12 @@ export default function SettingsPage() {
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <Upload className="h-5 w-5" />
-                            رفع ملف قاعدة البيانات / Upload Database File
+                            استيراد ذكي للبيانات / Smart Data Import
                         </CardTitle>
                         <CardDescription>
-                            ارفع ملف JSON أو CSV من جهازك لتحديث بيانات النظام
+                            استيراد ملفات SQL (من phpMyAdmin) أو تحديث النظام
                             <br />
-                            Upload a JSON or CSV file from your computer to update system data
+                            Import SQL dumps (from phpMyAdmin), JSON, or update system data
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -323,8 +325,8 @@ export default function SettingsPage() {
                         <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary/50 transition-colors">
                             <HardDrive className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
                             <div className="mb-3">
-                                <span className="block text-lg font-medium">اختر ملفاً من جهازك</span>
-                                <span className="block text-sm text-muted-foreground">Choose a file from your computer</span>
+                                <span className="block text-lg font-medium">سحب وإفلات أو اختر ملف SQL/JSON</span>
+                                <span className="block text-sm text-muted-foreground">Drag & drop or choose SQL/JSON file</span>
                             </div>
                             <div className="flex justify-center gap-3">
                                 <input
@@ -359,6 +361,27 @@ export default function SettingsPage() {
                                 <br />
                                 Supported formats: JSON, CSV, SQL | Max size: 50MB
                             </p>
+                        </div>
+
+                        {/* Import Mode Selection */}
+                        <div className="flex items-center space-x-2 bg-muted/30 p-3 rounded-md border">
+                            <div className="flex-1">
+                                <Label className="text-base">وضع الاستيراد / Import Mode</Label>
+                                <p className="text-xs text-muted-foreground">
+                                    {importMode === 'replace'
+                                        ? "استبدال كامل: يمسح البيانات الحالية ويستبدلها (مستحسن للنسخ الاحتياطي)"
+                                        : "دمج/إضافة: ينفذ الملف فوق البيانات الحالية (للتحديثات الصغيرة)"}
+                                </p>
+                            </div>
+                            <Select value={importMode} onValueChange={(v: "replace" | "append") => setImportMode(v)}>
+                                <SelectTrigger className="w-[180px]">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="replace">استبدال (Replace)</SelectItem>
+                                    <SelectItem value="append">إضافة (Append)</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
 
                         {/* Upload Status */}

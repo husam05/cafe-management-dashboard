@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     try {
         // Check if running on Vercel (serverless environment)
         const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
-        
+
         if (isVercel) {
             return NextResponse.json({
                 error: 'File upload is not available in serverless deployment',
@@ -27,6 +27,7 @@ export async function POST(req: Request) {
         const formData = await req.formData();
         const file = formData.get('file') as File | null;
         const fileType = formData.get('type') as string | null;
+        const mode = formData.get('mode') as string | null || 'replace'; // 'replace' or 'append'
 
         if (!file) {
             return NextResponse.json(
@@ -46,11 +47,11 @@ export async function POST(req: Request) {
         const fileName = file.name.toLowerCase();
         const isSql = fileName.endsWith('.sql');
         const isJson = fileName.endsWith('.json');
-        
+
         // Validate file type
         const allowedExtensions = ['.json', '.csv', '.sql'];
         const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-        
+
         if (!hasValidExtension) {
             return NextResponse.json(
                 { error: 'Invalid file type. Allowed: JSON, CSV, SQL' },
@@ -67,15 +68,15 @@ export async function POST(req: Request) {
         if (isJson) {
             try {
                 const jsonData = JSON.parse(content);
-                
+
                 // Check if it's a valid database export format
                 const isValidFormat = (
                     // PHPMyAdmin format: array of tables
                     (Array.isArray(jsonData) && jsonData.some(item => item.type === 'table')) ||
                     // Direct format: object with table names as keys
                     (typeof jsonData === 'object' && !Array.isArray(jsonData) && (
-                        jsonData.DailyReceipts || 
-                        jsonData.Categories || 
+                        jsonData.DailyReceipts ||
+                        jsonData.Categories ||
                         jsonData.MenuItems ||
                         jsonData.OrderItems
                     ))
@@ -124,11 +125,16 @@ export async function POST(req: Request) {
         if (isSql) {
             try {
                 console.log('🔄 Starting Database Refresh Workflow...');
-                
+
                 // 1. Reset Database (Drop & Recreate) to prevent 'Table exists' errors
-                const resetCmd = `docker exec -i cafe_db_local mysql -u root -proot -e "DROP DATABASE IF EXISTS cafe_management; CREATE DATABASE cafe_management;"`;
-                console.log(`➡️ Resetting Database: ${resetCmd}`);
-                await execAsync(resetCmd);
+                // 1. Reset Database (Drop & Recreate) - ONLY if mode is 'replace'
+                if (mode === 'replace') {
+                    const resetCmd = `docker exec -i cafe_db_local mysql -u root -proot -e "DROP DATABASE IF EXISTS cafe_management; CREATE DATABASE cafe_management;"`;
+                    console.log(`➡️ Resetting Database (Mode: Replace): ${resetCmd}`);
+                    await execAsync(resetCmd);
+                } else {
+                    console.log(`➡️ Skipping Reset (Mode: Append). Appending data to existing database.`);
+                }
 
                 // 2. Import SQL to Docker MySQL
                 const importCmd = `docker exec -i cafe_db_local mysql -u root -proot cafe_management < "${destinationPath}"`;
@@ -152,7 +158,7 @@ export async function POST(req: Request) {
                     success: true,
                     message: 'Database updated and synchronized successfully!',
                     fileName: file.name,
-                    details: 'Imported to MySQL & Synced to CSV'
+                    details: mode === 'replace' ? 'Full Database Restore & Sync' : 'SQL Execution (Append) & Sync'
                 });
 
             } catch (cmdError: any) {
@@ -182,7 +188,7 @@ export async function POST(req: Request) {
     } catch (error) {
         console.error('Upload error:', error);
         return NextResponse.json(
-            { 
+            {
                 error: 'Failed to upload file. Please try again.',
                 details: error instanceof Error ? error.message : 'Unknown error'
             },
@@ -197,7 +203,7 @@ export async function GET() {
         const projectRoot = path.resolve(process.cwd(), '..');
         const jsonPath = path.join(projectRoot, 'cafe_management.json');
         // We could also check CSV or SQL file stats here if needed, but keeping original logic for JSON info
-        
+
         try {
             const stats = await fs.stat(jsonPath);
             const content = await fs.readFile(jsonPath, 'utf-8');
